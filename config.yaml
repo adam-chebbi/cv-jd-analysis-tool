@@ -1,0 +1,9 @@
+extractor:
+  model: "en_core_web_md"
+  max_file_size_mb: 5
+matcher:
+  similarity_threshold: 0.7 
+  top_n_matches: 5
+paths:
+  uploads: "uploads/"
+  logs: "logs/"

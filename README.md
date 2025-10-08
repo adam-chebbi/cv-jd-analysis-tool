@@ -11,3 +11,6 @@ An tool for extracting key skills from CVs and JDs, and matching them semantical
 
 ## Usage
 streamlit run app.py
+
+## Configuration
+- Edit `config.yaml` to adjust settings like similarity thresholds or file paths.
