@@ -1,0 +1,15 @@
+{
+  "technical": {
+    "python": ["python programming", "python development", "python scripting"],
+    "javascript": ["js", "javascript development", "frontend scripting"],
+    "sql": ["structured query language", "database querying", "sql programming"],
+    "java": ["java programming", "java development"],
+    "machine learning": ["ml", "artificial intelligence", "deep learning"]
+  },
+  "soft": {
+    "project management": ["project coordination", "pm", "agile management"],
+    "communication": ["effective communication", "verbal skills", "written communication"],
+    "teamwork": ["collaboration", "team collaboration", "group work"],
+    "data analysis": ["data analytics", "data interpretation", "analytical skills"]
+  }
+}

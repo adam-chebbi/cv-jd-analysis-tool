@@ -3,6 +3,7 @@ import spacy
 import yaml
 import logging
 import os
+import json
 from typing import List, Optional
 
 class SkillExtractor:
@@ -29,11 +30,19 @@ class SkillExtractor:
             self.logger.error(f"Failed to load Spacy model: {str(e)}")
             raise
         
-        # Define a simple skill list for pattern matching (extendable)
-        self.skill_patterns = [
-            "python", "java", "javascript", "sql", "project management",
-            "communication", "teamwork", "data analysis", "machine learning"
-        ]
+        # Load skill dictionary
+        try:
+            with open("data/skills.json", 'r') as file:
+                self.skill_dict = json.load(file)
+            self.skill_patterns = []
+            for category in self.skill_dict.values():
+                for skill, synonyms in category.items():
+                    self.skill_patterns.append(skill)
+                    self.skill_patterns.extend(synonyms)
+            self.logger.info("Loaded skill dictionary")
+        except Exception as e:
+            self.logger.error(f"Failed to load skill dictionary: {str(e)}")
+            raise
 
     def validate_file(self, file_path: str, allow_text: bool = False) -> bool:
         """Validate the file (PDF or text for JDs)."""
@@ -61,7 +70,11 @@ class SkillExtractor:
             with pdfplumber.open(file_path) as pdf:
                 text = ""
                 for page in pdf.pages:
-                    text += page.extract_text() or ""
+                    page_text = page.extract_text() or ""
+                    text += page_text
+                if not text.strip():
+                    self.logger.error(f"No text extracted from {file_path}")
+                    return None
                 self.logger.info(f"Successfully extracted text from {file_path}")
                 return text
         except Exception as e:
@@ -76,6 +89,9 @@ class SkillExtractor:
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
                 text = file.read()
+                if not text.strip():
+                    self.logger.error(f"No text extracted from {file_path}")
+                    return None
                 self.logger.info(f"Successfully extracted text from {file_path}")
                 return text
         except Exception as e:
@@ -92,15 +108,23 @@ class SkillExtractor:
             doc = self.nlp(text.lower())
             skills = set()  # Use set to avoid duplicates
             
-            # Simple pattern matching for predefined skills
+            # Pattern matching with skill dictionary
             for skill in self.skill_patterns:
                 if skill in text.lower():
-                    skills.add(skill)
+                    # Map synonym to canonical skill
+                    for category in self.skill_dict.values():
+                        for canonical, synonyms in category.items():
+                            if skill == canonical or skill in synonyms:
+                                skills.add(canonical)
             
             # Extract noun phrases for CVs or JDs
             for chunk in doc.noun_chunks:
-                if any(skill in chunk.text.lower() for skill in self.skill_patterns):
-                    skills.add(chunk.text.lower())
+                for skill in self.skill_patterns:
+                    if skill in chunk.text.lower():
+                        for category in self.skill_dict.values():
+                            for canonical, synonyms in category.items():
+                                if skill == canonical or skill in synonyms:
+                                    skills.add(canonical)
             
             # JD-specific: Look for sections like 'requirements' or 'qualifications'
             if is_jd:
@@ -108,10 +132,17 @@ class SkillExtractor:
                 for sent in doc.sents:
                     if any(indicator in sent.text.lower() for indicator in jd_indicators):
                         for token in sent:
-                            if token.text.lower() in self.skill_patterns:
-                                skills.add(token.text.lower())
+                            for skill in self.skill_patterns:
+                                if token.text.lower() == skill:
+                                    for category in self.skill_dict.values():
+                                        for canonical, synonyms in category.items():
+                                            if skill == canonical or skill in synonyms:
+                                                skills.add(canonical)
             
-            self.logger.info(f"Extracted skills: {skills}")
+            if not skills:
+                self.logger.warning("No skills extracted from text")
+            else:
+                self.logger.info(f"Extracted skills: {skills}")
             return list(skills)
         except Exception as e:
             self.logger.error(f"Error during skill extraction: {str(e)}")
@@ -134,3 +165,50 @@ class SkillExtractor:
         if text:
             return self.extract_skills(text, is_jd=True)
         return []
+
+    def batch_extract_skills(self, texts: List[str], is_jd_list: List[bool]) -> List[List[str]]:
+        """Batch extract skills from multiple texts for performance."""
+        if not texts:
+            return []
+        
+        try:
+            docs = list(self.nlp.pipe([text.lower() for text in texts]))
+            batch_skills = []
+            for doc, text, is_jd in zip(docs, texts, is_jd_list):
+                skills = set()
+                # Pattern matching with skill dictionary
+                for skill in self.skill_patterns:
+                    if skill in text.lower():
+                        for category in self.skill_dict.values():
+                            for canonical, synonyms in category.items():
+                                if skill == canonical or skill in synonyms:
+                                    skills.add(canonical)
+                
+                # Extract noun phrases
+                for chunk in doc.noun_chunks:
+                    for skill in self.skill_patterns:
+                        if skill in chunk.text.lower():
+                            for category in self.skill_dict.values():
+                                for canonical, synonyms in category.items():
+                                    if skill == canonical or skill in synonyms:
+                                        skills.add(canonical)
+                
+                # JD-specific
+                if is_jd:
+                    jd_indicators = ["required", "qualifications", "skills", "must have"]
+                    for sent in doc.sents:
+                        if any(indicator in sent.text.lower() for indicator in jd_indicators):
+                            for token in sent:
+                                for skill in self.skill_patterns:
+                                    if token.text.lower() == skill:
+                                        for category in self.skill_dict.values():
+                                            for canonical, synonyms in category.items():
+                                                if skill == canonical or skill in synonyms:
+                                                    skills.add(canonical)
+                
+                batch_skills.append(list(skills))
+                self.logger.info(f"Batch extracted skills: {skills}")
+            return batch_skills
+        except Exception as e:
+            self.logger.error(f"Error in batch extraction: {str(e)}")
+            return [[] for _ in texts]
