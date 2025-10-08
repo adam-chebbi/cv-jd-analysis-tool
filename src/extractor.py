@@ -35,10 +35,14 @@ class SkillExtractor:
             "communication", "teamwork", "data analysis", "machine learning"
         ]
 
-    def validate_file(self, file_path: str) -> bool:
-        """Validate the CV file (PDF format and size)."""
-        if not file_path.lower().endswith('.pdf'):
-            self.logger.error(f"Invalid file format: {file_path}. Must be PDF.")
+    def validate_file(self, file_path: str, allow_text: bool = False) -> bool:
+        """Validate the file (PDF or text for JDs)."""
+        allowed_extensions = ['.pdf']
+        if allow_text:
+            allowed_extensions.append('.txt')
+        
+        if not any(file_path.lower().endswith(ext) for ext in allowed_extensions):
+            self.logger.error(f"Invalid file format: {file_path}. Must be one of {allowed_extensions}")
             return False
         
         file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
@@ -64,7 +68,21 @@ class SkillExtractor:
             self.logger.error(f"Failed to extract text from {file_path}: {str(e)}")
             return None
 
-    def extract_skills(self, text: str) -> List[str]:
+    def extract_text_from_txt(self, file_path: str) -> Optional[str]:
+        """Extract text from a plain text file."""
+        if not self.validate_file(file_path, allow_text=True):
+            return None
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as file:
+                text = file.read()
+                self.logger.info(f"Successfully extracted text from {file_path}")
+                return text
+        except Exception as e:
+            self.logger.error(f"Failed to extract text from {file_path}: {str(e)}")
+            return None
+
+    def extract_skills(self, text: str, is_jd: bool = False) -> List[str]:
         """Extract skills from text using NLP and pattern matching."""
         if not text:
             self.logger.warning("No text provided for skill extraction")
@@ -79,10 +97,19 @@ class SkillExtractor:
                 if skill in text.lower():
                     skills.add(skill)
             
-            # Extract noun phrases that might represent skills
+            # Extract noun phrases for CVs or JDs
             for chunk in doc.noun_chunks:
                 if any(skill in chunk.text.lower() for skill in self.skill_patterns):
                     skills.add(chunk.text.lower())
+            
+            # JD-specific: Look for sections like 'requirements' or 'qualifications'
+            if is_jd:
+                jd_indicators = ["required", "qualifications", "skills", "must have"]
+                for sent in doc.sents:
+                    if any(indicator in sent.text.lower() for indicator in jd_indicators):
+                        for token in sent:
+                            if token.text.lower() in self.skill_patterns:
+                                skills.add(token.text.lower())
             
             self.logger.info(f"Extracted skills: {skills}")
             return list(skills)
@@ -94,5 +121,16 @@ class SkillExtractor:
         """Process a CV file and return extracted skills."""
         text = self.extract_text_from_pdf(cv_path)
         if text:
-            return self.extract_skills(text)
+            return self.extract_skills(text, is_jd=False)
+        return []
+
+    def process_jd(self, jd_path: str) -> List[str]:
+        """Process a JD file (PDF or text) and return extracted skills."""
+        if jd_path.lower().endswith('.pdf'):
+            text = self.extract_text_from_pdf(jd_path)
+        else:
+            text = self.extract_text_from_txt(jd_path)
+        
+        if text:
+            return self.extract_skills(text, is_jd=True)
         return []
