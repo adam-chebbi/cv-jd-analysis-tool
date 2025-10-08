@@ -1,1 +1,0 @@
-remove anything that related to firebase studio
